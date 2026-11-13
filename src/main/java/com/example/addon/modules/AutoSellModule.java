@@ -217,7 +217,7 @@ public class AutoSellModule extends Module {
             }
 
             int stackCount = countTargetStacksInInventory();
-            int minRequiredToSell = keepOneStack.get() ? 2 : 1; // ต้องมีมากกว่า 1 กองถึงจะเปิดขาย
+            int minRequiredToSell = keepOneStack.get() ? 2 : 1;
 
             if (stackCount >= minRequiredToSell) {
                 ChatUtils.sendPlayerMsg(command.get());
@@ -230,10 +230,8 @@ public class AutoSellModule extends Module {
     }
 
     private boolean tryReplantCarrot() {
-        // ค้นหาแครอทในช่อง Hotbar (ช่อง 0-8)
         FindItemResult carrot = InvUtils.findInHotbar(Items.CARROT);
         if (!carrot.found()) {
-            // ถ้าใน Hotbar ไม่มี ให้ลองดึงจากกระเป๋าด้านบนมาใส่ช่อง Hotbar ช่องที่ 9 (index 8)
             FindItemResult invCarrot = InvUtils.find(Items.CARROT);
             if (invCarrot.found()) {
                 InvUtils.move().from(invCarrot.slot()).toHotbar(8);
@@ -244,7 +242,6 @@ public class AutoSellModule extends Module {
         BlockPos playerPos = mc.player.blockPosition();
         int r = replantRange.get();
 
-        // วนลูปหาดินพรวน (Farmland) ที่ด้านบนเป็นอากาศว่างเปล่าในรัศมีรอบตัว
         for (int x = -r; x <= r; x++) {
             for (int y = -2; y <= 2; y++) {
                 for (int z = -r; z <= r; z++) {
@@ -254,11 +251,10 @@ public class AutoSellModule extends Module {
                     if (mc.level.getBlockState(farmlandPos).is(Blocks.FARMLAND) &&
                         mc.level.getBlockState(cropPos).isAir()) {
 
-                        // ตรวจสอบระยะเอื้อมถึง
                         if (mc.player.distanceToSqr(Vec3.atCenterOf(farmlandPos)) > 20.25) continue;
 
-                        int prevSlot = mc.player.getInventory().selectedSlot;
-                        InvUtils.swap(carrot.slot(), false);
+                        // สลับไปถือแครอทพร้อมเปิดระบบสลับกลับอัตโนมัติ (swapBack)
+                        InvUtils.swap(carrot.slot(), true);
 
                         Vec3 hitVec = new Vec3(
                             farmlandPos.getX() + 0.5,
@@ -268,10 +264,9 @@ public class AutoSellModule extends Module {
                         BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, farmlandPos, false);
 
                         mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
-                        mc.player.swing(InteractionHand.MAIN_HAND);
 
-                        // สลับกลับไปถือจอบช่องเดิมทันทีเพื่อให้ Baritone เดินทุบต่อไม่สะดุด
-                        InvUtils.swap(prevSlot, false);
+                        // สลับกลับไปถือจอบช่องเดิมทันที
+                        InvUtils.swapBack();
                         return true;
                     }
                 }
