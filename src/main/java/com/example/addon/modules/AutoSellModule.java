@@ -7,11 +7,11 @@ import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 import java.util.List;
 
@@ -80,13 +80,13 @@ public class AutoSellModule extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         // กรณีที่ 1: หน้าต่างกล่อง (GUI) เปิดอยู่
-        if (mc.player.currentScreenHandler instanceof GenericContainerScreenHandler handler) {
-            if (mc.currentScreen == null) return;
+        if (mc.player.containerMenu instanceof ChestMenu handler) {
+            if (mc.screen == null) return;
 
-            String title = mc.currentScreen.getTitle().getString();
+            String title = mc.screen.getTitle().getString();
             if (!title.toUpperCase().contains(titleFilter.get().toUpperCase())) return;
 
             if (delayTimer > 0) {
@@ -94,12 +94,12 @@ public class AutoSellModule extends Module {
                 return;
             }
 
-            int containerSlots = handler.getRows() * 9;
+            int containerSlots = handler.getRowCount() * 9;
 
             // เช็กว่าช่องขายด้านบนเต็มแล้วหรือไม่
             boolean topFull = true;
             for (int i = 0; i < containerSlots; i++) {
-                if (handler.getSlot(i).getStack().isEmpty()) {
+                if (handler.getSlot(i).getItem().isEmpty()) {
                     topFull = false;
                     break;
                 }
@@ -107,7 +107,7 @@ public class AutoSellModule extends Module {
 
             // ถ้าช่องด้านบนเต็มแล้ว ให้สั่งปิดหน้าต่างทันทีเพื่อขายของ
             if (topFull) {
-                mc.player.closeHandledScreen();
+                mc.player.closeContainer();
                 delayTimer = actionDelay.get() * 5;
                 intervalTimer = sellInterval.get();
                 return;
@@ -116,7 +116,7 @@ public class AutoSellModule extends Module {
             // ค้นหาไอเทมที่กำหนดไว้ในช่องเก็บของของผู้เล่น (ด้านล่าง) แล้วย้ายขึ้นไปทีละช่อง
             for (int i = containerSlots; i < handler.slots.size(); i++) {
                 Slot slot = handler.getSlot(i);
-                ItemStack stack = slot.getStack();
+                ItemStack stack = slot.getItem();
 
                 if (!stack.isEmpty() && items.get().contains(stack.getItem())) {
                     InvUtils.shiftClick().slotId(i);
@@ -125,8 +125,8 @@ public class AutoSellModule extends Module {
                 }
             }
 
-            // หากวนลูปครบแล้วไม่เหลือไอเทมเป้าหมายในตัวเลย ให้สั่งปิดหน้าต่างอัตโนมัติเพื่อรับเงิน
-            mc.player.closeHandledScreen();
+            // หากวนลูปครบแล้วไม่เหลือแครอทในตัวเลย ให้สั่งปิดหน้าต่างอัตโนมัติเพื่อรับเงิน
+            mc.player.closeContainer();
             delayTimer = actionDelay.get() * 5;
             intervalTimer = sellInterval.get();
             return;
@@ -150,8 +150,8 @@ public class AutoSellModule extends Module {
     }
 
     private boolean hasTargetItemsInInventory() {
-        for (int i = 0; i < mc.player.getInventory().size(); i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (!stack.isEmpty() && items.get().contains(stack.getItem())) {
                 return true;
             }
