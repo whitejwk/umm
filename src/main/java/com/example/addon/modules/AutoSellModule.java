@@ -25,10 +25,14 @@ public class AutoSellModule extends Module {
         .build()
     );
 
-    private final Setting<String> titleFilter = sgGeneral.add(new StringSetting.Builder()
-        .name("window-title")
-        .description("ชื่อหน้าต่าง GUI ที่อนุญาตให้โยนของและปิดอัตโนมัติ")
-        .defaultValue("SELL")
+    private final Setting<Integer> rowsFilter = sgGeneral.add(new IntSetting.Builder()
+        .name("chest-rows")
+        .description("จำนวนแถวของหน้าต่าง SELL (ปกติคือ 4 แถว = 36 ช่อง)")
+        .defaultValue(4)
+        .min(1)
+        .max(6)
+        .sliderMin(1)
+        .sliderMax(6)
         .build()
     );
 
@@ -84,10 +88,8 @@ public class AutoSellModule extends Module {
 
         // กรณีที่ 1: หน้าต่างกล่อง (GUI) เปิดอยู่
         if (mc.player.containerMenu instanceof ChestMenu handler) {
-            if (mc.screen == null) return;
-
-            String title = mc.screen.getTitle().getString();
-            if (!title.toUpperCase().contains(titleFilter.get().toUpperCase())) return;
+            // เช็กจำนวนแถวของหน้าต่างให้ตรงกับหน้าต่าง SELL (4 แถว)
+            if (handler.getRowCount() != rowsFilter.get()) return;
 
             if (delayTimer > 0) {
                 delayTimer--;
