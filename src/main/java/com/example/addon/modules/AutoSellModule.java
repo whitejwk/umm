@@ -52,24 +52,39 @@ public class AutoSellModule extends Module {
         .build()
     );
 
-    private final Setting<Boolean> keepOneStack = sgGeneral.add(new BoolSetting.Builder()
-        .name("keep-one-stack")
-        .description("เหลือไอเทมไว้ในตัว 1 กองเสมอ เพื่อใช้ปลูกต่อไม่ให้หมดตัว")
-        .defaultValue(true)
+    private final Setting<Integer> minSellCount = sgGeneral.add(new IntSetting.Builder()
+        .name("min-sell-count")
+        .description("จำนวนไอเทมขั้นต่ำในกระเป๋าทั้งหมด (ชิ้น) ที่จะเริ่มพิมพ์คำสั่งขาย (0 - 2304)")
+        .defaultValue(1728)
+        .min(0)
+        .max(2304)
+        .sliderMin(0)
+        .sliderMax(2304)
+        .build()
+    );
+
+    private final Setting<Integer> keepStacks = sgGeneral.add(new IntSetting.Builder()
+        .name("keep-stacks")
+        .description("จำนวนกองที่ต้องการเก็บไว้ในตัวไม่เอาไปขาย (เช่น 9 กอง)")
+        .defaultValue(9)
+        .min(0)
+        .max(36)
+        .sliderMin(0)
+        .sliderMax(36)
         .build()
     );
 
     private final Setting<Boolean> autoOpen = sgGeneral.add(new BoolSetting.Builder()
         .name("auto-open")
-        .description("พิมพ์คำสั่งเปิดหน้าต่างขายอัตโนมัติตามเวลา")
+        .description("พิมพ์คำสั่งเปิดหน้าต่างขายอัตโนมัติเมื่อจำนวนไอเทมครบ")
         .defaultValue(true)
         .build()
     );
 
     private final Setting<Integer> sellInterval = sgGeneral.add(new IntSetting.Builder()
         .name("sell-interval")
-        .description("ระยะเวลาระหว่างการพิมพ์คำสั่งขายแต่ละรอบ (20 ticks = 1 วินาที)")
-        .defaultValue(600)
+        .description("ระยะเวลาพักขั้นต่ำหลังขายเสร็จแต่ละรอบ (20 ticks = 1 วินาที)")
+        .defaultValue(100)
         .min(20)
         .sliderMax(2400)
         .visible(autoOpen::get)
@@ -89,7 +104,7 @@ public class AutoSellModule extends Module {
     private final Setting<Boolean> autoReplant = sgReplant.add(new BoolSetting.Builder()
         .name("auto-replant")
         .description("ปลูกแครอทคืนลงบนดินพรวนที่ว่างอยู่รอบตัวอัตโนมัติ")
-        .defaultValue(true)
+        .defaultValue(false)
         .build()
     );
 
@@ -120,7 +135,7 @@ public class AutoSellModule extends Module {
     private int replantTimer = 0;
 
     public AutoSellModule() {
-        super(AddonTemplate.CATEGORY, "auto-sell-gui", "เปิดหน้าต่างขาย โยนไอเทม ปิดหน้าต่าง และปลูกแครอทคืนอัตโนมัติ");
+        super(AddonTemplate.CATEGORY, "auto-sell-gui", "เปิดหน้าต่างขายเมื่อของครบจำนวน เหลือไว้ตามกองที่ตั้ง และปิดหน้าต่างอัตโนมัติ");
     }
 
     @Override
@@ -162,7 +177,7 @@ public class AutoSellModule extends Module {
                 return;
             }
 
-            // นับจำนวนกองเป้าหมายทั้งหมดที่มีในตัว
+            // นับจำนวนกองเป้าหมายทั้งหมดที่มีอยู่ในช่องกระเป๋าของผู้เล่น
             int totalStacks = 0;
             for (int i = containerSlots; i < handler.slots.size(); i++) {
                 ItemStack stack = handler.getSlot(i).getItem();
@@ -171,10 +186,8 @@ public class AutoSellModule extends Module {
                 }
             }
 
-            // กำหนดจำนวนกองขั้นต่ำที่ต้องเหลือไว้ในตัว (1 กอง ถ้าเปิด keep-one-stack)
-            int minKeep = keepOneStack.get() ? 1 : 0;
-
-            if (totalStacks > minKeep) {
+            // หากจำนวนกองในตัวยังมากกว่าจำนวนที่ตั้งค่าให้เก็บไว้ (เช่น มากกว่า 9 กอง) ให้โยนขึ้นไปขาย
+            if (totalStacks > keepStacks.get()) {
                 for (int i = containerSlots; i < handler.slots.size(); i++) {
                     Slot slot = handler.getSlot(i);
                     ItemStack stack = slot.getItem();
@@ -187,7 +200,7 @@ public class AutoSellModule extends Module {
                 }
             }
 
-            // ย้ายเสร็จตามจำนวนที่ต้องการแล้ว -> ปิดหน้าต่างรับเงินทันที
+            // เมื่อเหลือครบ 9 กองตามที่ตั้งไว้แล้ว -> ปิดหน้าต่างรับเงินทันที
             mc.player.closeContainer();
             delayTimer = actionDelay.get() * 5;
             intervalTimer = sellInterval.get();
@@ -208,7 +221,7 @@ public class AutoSellModule extends Module {
         }
 
         // ==========================================
-        // ส่วนที่ 3: นับถอยหลังเพื่อพิมพ์คำสั่ง /sell อัตโนมัติ
+        // ส่วนที่ 3: เช็กจำนวนไอเทมในกระเป๋าเพื่อพิมพ์คำสั่ง /sell อัตโนมัติ
         // ==========================================
         if (autoOpen.get()) {
             if (intervalTimer > 0) {
@@ -216,15 +229,19 @@ public class AutoSellModule extends Module {
                 return;
             }
 
+            int currentItemCount = countTargetItemsInInventory();
             int stackCount = countTargetStacksInInventory();
-            int minRequiredToSell = keepOneStack.get() ? 2 : 1;
 
-            if (stackCount >= minRequiredToSell) {
+            // ต้องมีจำนวนชิ้นถึงเกณฑ์ที่ตั้งไว้ (min-sell-count) และมีจำนวนกองมากกว่าที่จะเก็บไว้ (มากกว่า 9 กอง)
+            boolean hasEnoughCount = currentItemCount >= minSellCount.get();
+            boolean hasExcessStacks = stackCount > keepStacks.get();
+
+            if (hasEnoughCount && hasExcessStacks) {
                 ChatUtils.sendPlayerMsg(command.get());
                 intervalTimer = sellInterval.get();
                 delayTimer = actionDelay.get() * 4;
             } else {
-                intervalTimer = 40;
+                intervalTimer = 20; // เช็กใหม่ทุกๆ 1 วินาที
             }
         }
     }
@@ -253,7 +270,6 @@ public class AutoSellModule extends Module {
 
                         if (mc.player.distanceToSqr(Vec3.atCenterOf(farmlandPos)) > 20.25) continue;
 
-                        // สลับไปถือแครอทพร้อมเปิดระบบสลับกลับอัตโนมัติ (swapBack)
                         InvUtils.swap(carrot.slot(), true);
 
                         Vec3 hitVec = new Vec3(
@@ -265,7 +281,6 @@ public class AutoSellModule extends Module {
 
                         mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
 
-                        // สลับกลับไปถือจอบช่องเดิมทันที
                         InvUtils.swapBack();
                         return true;
                     }
@@ -273,6 +288,17 @@ public class AutoSellModule extends Module {
             }
         }
         return false;
+    }
+
+    private int countTargetItemsInInventory() {
+        int total = 0;
+        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            if (!stack.isEmpty() && items.get().contains(stack.getItem())) {
+                total += stack.getCount();
+            }
+        }
+        return total;
     }
 
     private int countTargetStacksInInventory() {
