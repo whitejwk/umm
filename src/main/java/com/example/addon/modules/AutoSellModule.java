@@ -17,6 +17,8 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.SweetBerryBushBlock;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -24,6 +26,7 @@ import java.util.List;
 
 public class AutoSellModule extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+    private final SettingGroup sgBerry = settings.createGroup("Auto Berry");
     private final SettingGroup sgReplant = settings.createGroup("Auto Replant");
 
     // --- ตั้งค่า Auto Sell ---
@@ -47,8 +50,8 @@ public class AutoSellModule extends Module {
 
     private final Setting<List<Item>> items = sgGeneral.add(new ItemListSetting.Builder()
         .name("items")
-        .description("รายการไอเทมที่ต้องการขาย")
-        .defaultValue(Items.CARROT)
+        .description("รายการไอเทมที่ต้องการขาย (เพิ่ม Sweet Berries ได้ที่นี่)")
+        .defaultValue(Items.CARROT, Items.SWEET_BERRIES)
         .build()
     );
 
@@ -65,7 +68,7 @@ public class AutoSellModule extends Module {
 
     private final Setting<Integer> keepStacks = sgGeneral.add(new IntSetting.Builder()
         .name("keep-stacks")
-        .description("จำนวนกองที่ต้องการเก็บไว้ในตัวไม่เอาไปขาย (เช่น 9 กอง)")
+        .description("จำนวนกองที่ต้องการเก็บไว้ในตัวไม่เอาไปขาย (เช่น 9 กอง หรือตั้ง 0 ถ้าขายหมด)")
         .defaultValue(9)
         .min(0)
         .max(36)
@@ -97,6 +100,48 @@ public class AutoSellModule extends Module {
         .defaultValue(2)
         .min(1)
         .sliderMax(20)
+        .build()
+    );
+
+    // --- ตั้งค่า Auto Berry (เก็บ Sweet Berry ตามระยะการโต) ---
+    private final Setting<Boolean> autoBerry = sgBerry.add(new BoolSetting.Builder()
+        .name("auto-berry")
+        .description("คลิกขวาเก็บผล Sweet Berry รอบตัวอัตโนมัติเมื่อโตถึงระยะที่กำหนด")
+        .defaultValue(true)
+        .build()
+    );
+
+    private final Setting<Integer> berryMinAge = sgBerry.add(new IntSetting.Builder()
+        .name("min-berry-age")
+        .description("ระยะความโตขั้นต่ำที่จะเก็บ (2 = เริ่มมีผล, 3 = โตเต็มที่)")
+        .defaultValue(3)
+        .min(2)
+        .max(3)
+        .sliderMin(2)
+        .sliderMax(3)
+        .visible(autoBerry::get)
+        .build()
+    );
+
+    private final Setting<Integer> berryRange = sgBerry.add(new IntSetting.Builder()
+        .name("berry-range")
+        .description("รัศมีในการค้นหาพุ่มเบอร์รี่รอบตัว (บล็อก)")
+        .defaultValue(4)
+        .min(1)
+        .max(5)
+        .sliderMin(1)
+        .sliderMax(5)
+        .visible(autoBerry::get)
+        .build()
+    );
+
+    private final Setting<Integer> berryDelay = sgBerry.add(new IntSetting.Builder()
+        .name("berry-delay")
+        .description("ความเร็วในการเก็บเบอร์รี่แต่ละพุ่ม (ticks)")
+        .defaultValue(2)
+        .min(1)
+        .sliderMax(20)
+        .visible(autoBerry::get)
         .build()
     );
 
@@ -132,16 +177,18 @@ public class AutoSellModule extends Module {
 
     private int intervalTimer = 0;
     private int delayTimer = 0;
+    private int berryTimer = 0;
     private int replantTimer = 0;
 
     public AutoSellModule() {
-        super(AddonTemplate.CATEGORY, "auto-sell-gui", "เปิดหน้าต่างขายเมื่อของครบจำนวน เหลือไว้ตามกองที่ตั้ง และปิดหน้าต่างอัตโนมัติ");
+        super(AddonTemplate.CATEGORY, "auto-sell-gui", "เก็บเบอร์รี่ตามระยะโต ปลูกพืช และเปิดหน้าต่างขายของอัตโนมัติ");
     }
 
     @Override
     public void onActivate() {
         intervalTimer = 0;
         delayTimer = 0;
+        berryTimer = 0;
         replantTimer = 0;
     }
 
@@ -177,7 +224,6 @@ public class AutoSellModule extends Module {
                 return;
             }
 
-            // นับจำนวนกองเป้าหมายทั้งหมดที่มีอยู่ในช่องกระเป๋าของผู้เล่น
             int totalStacks = 0;
             for (int i = containerSlots; i < handler.slots.size(); i++) {
                 ItemStack stack = handler.getSlot(i).getItem();
@@ -186,7 +232,6 @@ public class AutoSellModule extends Module {
                 }
             }
 
-            // หากจำนวนกองในตัวยังมากกว่าจำนวนที่ตั้งค่าให้เก็บไว้ (เช่น มากกว่า 9 กอง) ให้โยนขึ้นไปขาย
             if (totalStacks > keepStacks.get()) {
                 for (int i = containerSlots; i < handler.slots.size(); i++) {
                     Slot slot = handler.getSlot(i);
@@ -200,7 +245,6 @@ public class AutoSellModule extends Module {
                 }
             }
 
-            // เมื่อเหลือครบ 9 กองตามที่ตั้งไว้แล้ว -> ปิดหน้าต่างรับเงินทันที
             mc.player.closeContainer();
             delayTimer = actionDelay.get() * 5;
             intervalTimer = sellInterval.get();
@@ -208,7 +252,20 @@ public class AutoSellModule extends Module {
         }
 
         // ==========================================
-        // ส่วนที่ 2: ระบบปลูกแครอทคืนอัตโนมัติ (Auto Replant)
+        // ส่วนที่ 2: ระบบเก็บ Sweet Berry ตามระยะการโต (Auto Berry)
+        // ==========================================
+        if (autoBerry.get()) {
+            if (berryTimer > 0) {
+                berryTimer--;
+            } else {
+                if (tryHarvestSweetBerry()) {
+                    berryTimer = berryDelay.get();
+                }
+            }
+        }
+
+        // ==========================================
+        // ส่วนที่ 3: ระบบปลูกแครอทคืนอัตโนมัติ (Auto Replant)
         // ==========================================
         if (autoReplant.get()) {
             if (replantTimer > 0) {
@@ -221,7 +278,7 @@ public class AutoSellModule extends Module {
         }
 
         // ==========================================
-        // ส่วนที่ 3: เช็กจำนวนไอเทมในกระเป๋าเพื่อพิมพ์คำสั่ง /sell อัตโนมัติ
+        // ส่วนที่ 4: เช็กจำนวนไอเทมในกระเป๋าเพื่อพิมพ์คำสั่ง /sell อัตโนมัติ
         // ==========================================
         if (autoOpen.get()) {
             if (intervalTimer > 0) {
@@ -232,7 +289,6 @@ public class AutoSellModule extends Module {
             int currentItemCount = countTargetItemsInInventory();
             int stackCount = countTargetStacksInInventory();
 
-            // ต้องมีจำนวนชิ้นถึงเกณฑ์ที่ตั้งไว้ (min-sell-count) และมีจำนวนกองมากกว่าที่จะเก็บไว้ (มากกว่า 9 กอง)
             boolean hasEnoughCount = currentItemCount >= minSellCount.get();
             boolean hasExcessStacks = stackCount > keepStacks.get();
 
@@ -241,9 +297,40 @@ public class AutoSellModule extends Module {
                 intervalTimer = sellInterval.get();
                 delayTimer = actionDelay.get() * 4;
             } else {
-                intervalTimer = 20; // เช็กใหม่ทุกๆ 1 วินาที
+                intervalTimer = 20;
             }
         }
+    }
+
+    private boolean tryHarvestSweetBerry() {
+        BlockPos playerPos = mc.player.blockPosition();
+        int r = berryRange.get();
+        int targetAge = berryMinAge.get();
+
+        for (int x = -r; x <= r; x++) {
+            for (int y = -2; y <= 2; y++) {
+                for (int z = -r; z <= r; z++) {
+                    BlockPos pos = playerPos.offset(x, y, z);
+                    BlockState state = mc.level.getBlockState(pos);
+
+                    // เช็กว่าเป็นบล็อกพุ่ม Sweet Berry และเช็กค่า AGE (ระยะความโต 0-3)
+                    if (state.is(Blocks.SWEET_BERRY_BUSH)) {
+                        int age = state.getValue(SweetBerryBushBlock.AGE);
+                        if (age >= targetAge) {
+                            if (mc.player.distanceToSqr(Vec3.atCenterOf(pos)) > 20.25) continue;
+
+                            Vec3 hitVec = Vec3.atCenterOf(pos);
+                            BlockHitResult hitResult = new BlockHitResult(hitVec, Direction.UP, pos, false);
+
+                            // คลิกขวาเก็บผลเบอร์รี่โดยไม่ทำลายต้นพุ่ม
+                            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private boolean tryReplantCarrot() {
