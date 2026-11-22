@@ -5,9 +5,9 @@ import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.ChatUtils;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -92,6 +92,9 @@ public class AutoOrderModule extends Module {
     private void onTick(TickEvent.Post event) {
         if (mc.player == null || mc.level == null || mc.gameMode == null) return;
 
+        // ==========================================
+        // ส่วนที่ 1: จัดการหน้าต่าง GUI ทั้ง 3 ขั้นตอน
+        // ==========================================
         if (mc.player.containerMenu instanceof ChestMenu handler) {
             if (delayTimer > 0) {
                 delayTimer--;
@@ -100,11 +103,12 @@ public class AutoOrderModule extends Module {
 
             int rows = handler.getRowCount();
 
+            // หน้าต่างที่ 1: หน้าต่าง ORDERS (6 แถว = 54 ช่อง)
             if (rows == 6) {
                 for (int i = 0; i < 45; i++) {
                     ItemStack stack = handler.getSlot(i).getItem();
                     if (!stack.isEmpty() && targetItems.get().contains(stack.getItem())) {
-                        clickSlot(handler.containerId, i);
+                        InvUtils.click().slotId(i);
                         delayTimer = clickDelay.get();
                         return;
                     }
@@ -112,17 +116,21 @@ public class AutoOrderModule extends Module {
                 return;
             }
 
+            // หน้าต่างที่ 2 และ 3: กล่องขนาด 3 แถว (27 ช่อง)
             if (rows == 3) {
+                // หน้าต่างที่ 2: "เลือกวิธีส่ง" -> มี Hopper (ส่งทั้งหมด) อยู่ที่ช่อง 15 (แถว 2 ช่อง 7)
                 ItemStack slot15 = handler.getSlot(15).getItem();
                 if (!slot15.isEmpty() && slot15.is(Items.HOPPER)) {
-                    clickSlot(handler.containerId, 15);
+                    InvUtils.click().slotId(15);
                     delayTimer = clickDelay.get();
                     return;
                 }
 
+                // หน้าต่างที่ 3: "ยืนยันการส่ง" -> ช่อง 13 ตรงกลางเป็นไอเทมที่จะส่ง และช่อง 16 เป็นปุ่มกระจกสีเขียว
+                ItemStack slot13 = handler.getSlot(13).getItem();
                 ItemStack slot16 = handler.getSlot(16).getItem();
-                if (!slot16.isEmpty() && (slot16.is(Items.LIME_STAINED_GLASS_PANE) || slot16.is(Items.GREEN_STAINED_GLASS_PANE))) {
-                    clickSlot(handler.containerId, 16);
+                if (!slot13.isEmpty() && targetItems.get().contains(slot13.getItem()) && !slot16.isEmpty()) {
+                    InvUtils.click().slotId(16);
                     delayTimer = clickDelay.get() * 3;
                     intervalTimer = checkInterval.get();
                     return;
@@ -131,6 +139,9 @@ public class AutoOrderModule extends Module {
             return;
         }
 
+        // ==========================================
+        // ส่วนที่ 2: เช็กจำนวนของในตัวและพิมพ์คำสั่ง /order ชื่อ
+        // ==========================================
         if (autoOpen.get()) {
             if (intervalTimer > 0) {
                 intervalTimer--;
@@ -149,10 +160,6 @@ public class AutoOrderModule extends Module {
                 intervalTimer = 20;
             }
         }
-    }
-
-    private void clickSlot(int containerId, int slotId) {
-        mc.gameMode.handleInventoryMouseClick(containerId, slotId, 0, ClickType.PICKUP, mc.player);
     }
 
     private int countTargetItemsInInventory() {
