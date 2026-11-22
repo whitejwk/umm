@@ -1,5 +1,6 @@
 package com.example.addon;
 
+import com.example.addon.modules.AutoOrderModule;
 import com.example.addon.modules.AutoSellModule;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.addons.GithubRepo;
@@ -16,8 +17,9 @@ public class AddonTemplate extends MeteorAddon {
 
     @Override
     public void onInitialize() {
-        LOG.info("Initializing AutoSell Addon");
+        LOG.info("Initializing AutoSell & AutoOrder Addon");
         Modules.get().add(new AutoSellModule());
+        Modules.get().add(new AutoOrderModule());
     }
 
     @Override
